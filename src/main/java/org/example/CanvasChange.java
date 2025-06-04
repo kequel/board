@@ -1,7 +1,7 @@
 package org.example;
 
 public class CanvasChange {
-    private String type; //DRAW/ERASE
+    private String type; // DRAW/ERASE
     private int x;
     private int y;
     private String color; // hex color
@@ -15,6 +15,7 @@ public class CanvasChange {
         this.size = size;
     }
 
+    // Gettery
     public String getType() { return type; }
     public int getX() { return x; }
     public int getY() { return y; }

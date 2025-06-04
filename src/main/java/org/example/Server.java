@@ -9,7 +9,7 @@ import java.util.concurrent.*;
 public class Server {
     static final int PORT = 5000;
     static final int WIDTH = 50, HEIGHT = 50;
-    private static final int[][] board = new int[WIDTH][HEIGHT];
+    private static final ConcurrentHashMap<Point, String> board = new ConcurrentHashMap<>();
     private static final List<PrintWriter> clients = new CopyOnWriteArrayList<>();
     private static final Gson gson = new Gson();
 
@@ -33,25 +33,22 @@ public class Server {
 
             // Wysyłanie początkowego stanu tablicy
             synchronized (board) {
-                for (int x = 0; x < WIDTH; x++) {
-                    for (int y = 0; y < HEIGHT; y++) {
-                        if (board[x][y] != 0) {
-                            CanvasChange change = new CanvasChange("DRAW", x, y, "#000000", 1);
-                            out.println(gson.toJson(change));
-                        }
-                    }
+                for (Map.Entry<Point, String> entry : board.entrySet()) {
+                    Point p = entry.getKey();
+                    CanvasChange change = new CanvasChange("DRAW", p.x, p.y, entry.getValue(), 1);
+                    out.println(gson.toJson(change));
                 }
             }
 
             String line;
             while ((line = in.readLine()) != null) {
                 CanvasChange change = gson.fromJson(line, CanvasChange.class);
+                Point p = new Point(change.getX(), change.getY(), change.getColor());
 
                 synchronized (board) {
-                    board[change.getX()][change.getY()] = 1;
+                    board.put(p, change.getColor());
                 }
 
-                // Rozsyłanie zmiany do wszystkich klientów
                 for (PrintWriter client : clients) {
                     client.println(line);
                 }
