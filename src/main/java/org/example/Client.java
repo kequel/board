@@ -7,14 +7,14 @@ import java.awt.event.*;
 import java.io.*;
 import java.net.*;
 import java.util.*;
-import java.util.concurrent.*;
+import java.util.List;
 
 public class Client {
     static final int PORT = 5000;
     static final int WIDTH = 50, HEIGHT = 50;
-    static final ConcurrentHashMap<Point, String> drawnPoints = new ConcurrentHashMap<>();
     private static final Gson gson = new Gson();
     private static String currentColor = "#000000";
+    private static final CanvasBuffer canvasBuffer = new CanvasBuffer();
 
     public static void main(String[] args) throws IOException {
         String host = JOptionPane.showInputDialog("Adres serwera:");
@@ -26,10 +26,15 @@ public class Client {
         JPanel panel = new JPanel() {
             protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
-                for (Map.Entry<Point, String> entry : drawnPoints.entrySet()) {
+                for (Map.Entry<Point, String> entry : canvasBuffer.getCanvasState().entrySet()) {
                     Point p = entry.getKey();
-                    g.setColor(Color.decode(entry.getValue()));
-                    g.fillRect(p.x * 10, p.y * 10, 10, 10);
+                    try {
+                        g.setColor(Color.decode(entry.getValue()));
+                        g.fillRect(p.x * 10, p.y * 10, 10, 10);
+                    } catch (NumberFormatException e) {
+                        g.setColor(Color.WHITE);
+                        g.fillRect(p.x * 10, p.y * 10, 10, 10);
+                    }
                 }
             }
         };
@@ -50,13 +55,13 @@ public class Client {
 
         panel.addMouseMotionListener(new MouseMotionAdapter() {
             public void mouseDragged(MouseEvent e) {
-                handleDrawing(e, out);
+                handleDrawing(e);
             }
         });
 
         panel.addMouseListener(new MouseAdapter() {
             public void mousePressed(MouseEvent e) {
-                handleDrawing(e, out);
+                handleDrawing(e);
             }
         });
 
@@ -66,14 +71,29 @@ public class Client {
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setVisible(true);
 
+        // Wątek wysyłający zmiany
+        new Thread(() -> {
+            while (true) {
+                try {
+                    Thread.sleep(50);
+                    List<CanvasChange> pending = canvasBuffer.getPendingChanges();
+                    if (!pending.isEmpty()) {
+                        out.println(gson.toJson(pending));
+                    }
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+        }).start();
+
+        // Wątek odbierający zmiany
         new Thread(() -> {
             try {
                 String line;
                 while ((line = in.readLine()) != null) {
-                    CanvasChange change = gson.fromJson(line, CanvasChange.class);
-                    Point p = new Point(change.getX(), change.getY(), change.getColor());
-                    if (change.getType().equals("DRAW")) {
-                        drawnPoints.put(p, change.getColor());
+                    CanvasChange[] changes = gson.fromJson(line, CanvasChange[].class);
+                    for (CanvasChange change : changes) {
+                        canvasBuffer.applyChange(change);
                     }
                     panel.repaint();
                 }
@@ -83,10 +103,11 @@ public class Client {
         }).start();
     }
 
-    private static void handleDrawing(MouseEvent e, PrintWriter out) {
+    private static void handleDrawing(MouseEvent e) {
         int x = e.getX() / 10;
         int y = e.getY() / 10;
-        CanvasChange change = new CanvasChange("DRAW", x, y, currentColor, 1);
-        out.println(gson.toJson(change));
+        String type = currentColor.equals("#FFFFFF") ? "ERASE" : "DRAW";
+        CanvasChange change = new CanvasChange(type, x, y, currentColor, 1);
+        canvasBuffer.applyChange(change);
     }
 }
