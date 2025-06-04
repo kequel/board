@@ -1,5 +1,6 @@
 package org.example;
 
+import com.google.gson.Gson;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -12,9 +13,11 @@ public class Client {
     static final int PORT = 5000;
     static final int WIDTH = 50, HEIGHT = 50;
     static Set<Point> drawnPoints = new HashSet<>();
+    private static final Gson gson = new Gson();
+    private static boolean isDrawing = false;
 
     public static void main(String[] args) throws IOException {
-        String host = JOptionPane.showInputDialog("Adres serwera:"); //teraz: localhost
+        String host = JOptionPane.showInputDialog("Adres serwera:"); //test: localhost
         Socket socket = new Socket(host, PORT);
         PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
         BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
@@ -31,11 +34,28 @@ public class Client {
         };
 
         panel.setPreferredSize(new Dimension(WIDTH * 10, HEIGHT * 10));
-        panel.addMouseListener(new MouseAdapter() {
-            public void mousePressed(MouseEvent e) {
+
+        //sledzenie myszki
+        panel.addMouseMotionListener(new MouseMotionAdapter() {
+            public void mouseDragged(MouseEvent e) {
                 int x = e.getX() / 10;
                 int y = e.getY() / 10;
-                out.println("DRAW " + x + " " + y);
+                CanvasChange change = new CanvasChange("DRAW", x, y, "#000000", 1);
+                out.println(gson.toJson(change));
+            }
+        });
+
+        panel.addMouseListener(new MouseAdapter() {
+            public void mousePressed(MouseEvent e) {
+                isDrawing = true;
+                int x = e.getX() / 10;
+                int y = e.getY() / 10;
+                CanvasChange change = new CanvasChange("DRAW", x, y, "#000000", 1);
+                out.println(gson.toJson(change));
+            }
+
+            public void mouseReleased(MouseEvent e) {
+                isDrawing = false;
             }
         });
 
@@ -48,11 +68,9 @@ public class Client {
             try {
                 String line;
                 while ((line = in.readLine()) != null) {
-                    if (line.startsWith("DRAW")) {
-                        String[] parts = line.split(" ");
-                        int x = Integer.parseInt(parts[1]);
-                        int y = Integer.parseInt(parts[2]);
-                        drawnPoints.add(new Point(x, y));
+                    CanvasChange change = gson.fromJson(line, CanvasChange.class);
+                    if (change.getType().equals("DRAW")) {
+                        drawnPoints.add(new Point(change.getX(), change.getY()));
                         panel.repaint();
                     }
                 }

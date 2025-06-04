@@ -1,5 +1,6 @@
 package org.example;
 
+import com.google.gson.Gson;
 import java.io.*;
 import java.net.*;
 import java.util.*;
@@ -8,9 +9,9 @@ import java.util.concurrent.*;
 public class Server {
     static final int PORT = 5000;
     static final int WIDTH = 50, HEIGHT = 50;
-
     private static final int[][] board = new int[WIDTH][HEIGHT];
     private static final List<PrintWriter> clients = new CopyOnWriteArrayList<>();
+    private static final Gson gson = new Gson();
 
     public static void main(String[] args) throws IOException {
         ServerSocket serverSocket = new ServerSocket(PORT);
@@ -30,11 +31,13 @@ public class Server {
         ) {
             clients.add(out);
 
+            // Wysyłanie początkowego stanu tablicy
             synchronized (board) {
                 for (int x = 0; x < WIDTH; x++) {
                     for (int y = 0; y < HEIGHT; y++) {
                         if (board[x][y] != 0) {
-                            out.println("DRAW " + x + " " + y);
+                            CanvasChange change = new CanvasChange("DRAW", x, y, "#000000", 1);
+                            out.println(gson.toJson(change));
                         }
                     }
                 }
@@ -42,22 +45,21 @@ public class Server {
 
             String line;
             while ((line = in.readLine()) != null) {
-                if (line.startsWith("DRAW")) {
-                    String[] parts = line.split(" ");
-                    int x = Integer.parseInt(parts[1]);
-                    int y = Integer.parseInt(parts[2]);
+                CanvasChange change = gson.fromJson(line, CanvasChange.class);
 
-                    synchronized (board) {
-                        board[x][y] = 1;
-                    }
+                synchronized (board) {
+                    board[change.getX()][change.getY()] = 1;
+                }
 
-                    for (PrintWriter client : clients) {
-                        client.println(line);
-                    }
+                // Rozsyłanie zmiany do wszystkich klientów
+                for (PrintWriter client : clients) {
+                    client.println(line);
                 }
             }
         } catch (IOException e) {
             System.err.println("Błąd połączenia: " + e.getMessage());
+        } finally {
+            clients.removeIf(writer -> writer.checkError());
         }
     }
 }
