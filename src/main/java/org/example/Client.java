@@ -1,6 +1,5 @@
 package org.example;
 
-import com.google.gson.Gson;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
@@ -12,15 +11,14 @@ import java.util.List;
 public class Client {
     static final int PORT = 5000;
     static final int WIDTH = 50, HEIGHT = 50;
-    private static final Gson gson = new Gson();
     private static String currentColor = "#000000";
     private static final CanvasBuffer canvasBuffer = new CanvasBuffer();
 
     public static void main(String[] args) throws IOException {
         String host = JOptionPane.showInputDialog("Adres serwera:");
         Socket socket = new Socket(host, PORT);
-        PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-        BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream());
+        BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
 
         JFrame frame = new JFrame("Tablica");
         JPanel panel = new JPanel() {
@@ -78,9 +76,11 @@ public class Client {
                     Thread.sleep(50);
                     List<CanvasChange> pending = canvasBuffer.getPendingChanges();
                     if (!pending.isEmpty()) {
-                        out.println(gson.toJson(pending));
+                        byte[] data = serializeChanges(pending);
+                        out.write(data);
+                        out.flush();
                     }
-                } catch (InterruptedException e) {
+                } catch (InterruptedException | IOException e) {
                     Thread.currentThread().interrupt();
                     break;
                 }
@@ -90,18 +90,55 @@ public class Client {
         // Wątek odbierający zmiany
         new Thread(() -> {
             try {
-                String line;
-                while ((line = in.readLine()) != null) {
-                    CanvasChange[] changes = gson.fromJson(line, CanvasChange[].class);
-                    for (CanvasChange change : changes) {
-                        canvasBuffer.applyChange(change);
-                    }
+                byte[] buffer = new byte[4];
+                while (in.read(buffer) != -1) {
+                    CanvasChange change = deserializeChange(buffer);
+                    canvasBuffer.applyChange(change);
                     panel.repaint();
                 }
             } catch (IOException e) {
                 e.printStackTrace();
             }
         }).start();
+    }
+
+    private static byte[] serializeChanges(List<CanvasChange> changes) {
+        ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+        for (CanvasChange change : changes) {
+            byteStream.write(change.getX());
+            byteStream.write(change.getY());
+            byteStream.write(colorToByte(change.getColor()));
+            byteStream.write(change.getType().equals("DRAW") ? 0x01 : 0x00);
+        }
+        return byteStream.toByteArray();
+    }
+
+    private static CanvasChange deserializeChange(byte[] data) {
+        int x = data[0] & 0xFF;
+        int y = data[1] & 0xFF;
+        String color = byteToColor(data[2]);
+        String type = data[3] == 0x01 ? "DRAW" : "ERASE";
+        return new CanvasChange(type, x, y, color, 1);
+    }
+
+    private static byte colorToByte(String color) {
+        switch (color) {
+            case "#FF0000": return 0x01;
+            case "#0000FF": return 0x02;
+            case "#FFFF00": return 0x03;
+            case "#000000": return 0x04;
+            default: return 0x00;
+        }
+    }
+
+    private static String byteToColor(byte b) {
+        switch (b) {
+            case 0x01: return "#FF0000";
+            case 0x02: return "#0000FF";
+            case 0x03: return "#FFFF00";
+            case 0x04: return "#000000";
+            default: return "#FFFFFF";
+        }
     }
 
     private static void handleDrawing(MouseEvent e) {

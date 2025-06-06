@@ -12,10 +12,12 @@ public class CanvasBuffer {
 
     public void applyChange(CanvasChange change) {
         Point p = new Point(change.getX(), change.getY(), change.getColor());
-        if (change.getType().equals("DRAW")) {
-            canvasState.put(p, change.getColor());
-        } else if (change.getType().equals("ERASE")) {
-            canvasState.remove(p);
+        synchronized (canvasState) {
+            if (change.getType().equals("DRAW")) {
+                canvasState.put(p, change.getColor());
+            } else {
+                canvasState.remove(p);
+            }
         }
         pendingChanges.add(change);
     }
@@ -25,8 +27,11 @@ public class CanvasBuffer {
     }
 
     public List<CanvasChange> getPendingChanges() {
-        List<CanvasChange> changes = new ArrayList<>(pendingChanges);
-        pendingChanges.clear();
+        List<CanvasChange> changes = new ArrayList<>();
+        CanvasChange change;
+        while ((change = pendingChanges.poll()) != null) {
+            changes.add(change);
+        }
         return changes;
     }
 }

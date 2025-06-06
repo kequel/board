@@ -1,6 +1,5 @@
 package org.example;
 
-import com.google.gson.Gson;
 import java.io.*;
 import java.net.*;
 import java.util.*;
@@ -10,28 +9,31 @@ public class Server {
     static final int PORT = 5000;
     static final int WIDTH = 50, HEIGHT = 50;
     private static final ConcurrentHashMap<Point, String> board = new ConcurrentHashMap<>();
-    private static final List<PrintWriter> clients = new CopyOnWriteArrayList<>();
-    private static final Gson gson = new Gson();
+    private static final List<BufferedOutputStream> clients = new CopyOnWriteArrayList<>();
     private static final ChangeBuffer changeBuffer = new ChangeBuffer();
 
     public static void main(String[] args) throws IOException {
         ServerSocket serverSocket = new ServerSocket(PORT);
         System.out.println("Serwer nasłuchuje na porcie " + PORT);
 
+        // Wątek wysyłający zmiany do klientów
         new Thread(() -> {
             while (true) {
                 try {
                     Thread.sleep(50);
                     if (changeBuffer.shouldFlush()) {
                         List<CanvasChange> changes = changeBuffer.getChanges();
-                        String json = gson.toJson(changes);
-                        synchronized (clients) {
-                            for (PrintWriter client : clients) {
-                                client.println(json);
+                        if (!changes.isEmpty()) {
+                            byte[] data = serializeChanges(changes);
+                            synchronized (clients) {
+                                for (BufferedOutputStream client : clients) {
+                                    client.write(data);
+                                    client.flush();
+                                }
                             }
                         }
                     }
-                } catch (InterruptedException e) {
+                } catch (InterruptedException | IOException e) {
                     e.printStackTrace();
                 }
             }
@@ -46,10 +48,12 @@ public class Server {
 
     private static void handleClient(Socket socket) {
         try (
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true)
+                BufferedInputStream in = new BufferedInputStream(socket.getInputStream());
+                BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream())
         ) {
-            clients.add(out);
+            synchronized (clients) {
+                clients.add(out);
+            }
 
             // Wysyłanie początkowego stanu tablicy
             synchronized (board) {
@@ -59,42 +63,80 @@ public class Server {
                     initialChanges.add(new CanvasChange("DRAW", p.x, p.y, entry.getValue(), 1));
                 }
                 if (!initialChanges.isEmpty()) {
-                    out.println(gson.toJson(initialChanges));
+                    out.write(serializeChanges(initialChanges));
+                    out.flush();
                 }
             }
 
-            String line;
-            while ((line = in.readLine()) != null) {
-                try {
-                    CanvasChange[] changes = gson.fromJson(line, CanvasChange[].class);
-                    //walidacja i dodanie do bufora
-                    for (CanvasChange change : changes) {
-                        if (isValidChange(change)) {
-                            changeBuffer.addChange(change);
-                        }
-                    }
-                    //zastosowanie wszystkich zmian na raz
+            byte[] buffer = new byte[4];
+            while (in.read(buffer) != -1) {
+                CanvasChange change = deserializeChange(buffer);
+                if (isValidChange(change)) {
+                    changeBuffer.addChange(change);
                     synchronized (board) {
-                        for (CanvasChange change : changes) {
-                            applyChangeToBoard(change);
-                        }
+                        applyChangeToBoard(change);
                     }
-                } catch (Exception e) {
-                    System.err.println("Błąd przetwarzania zmiany: " + e.getMessage());
                 }
             }
         } catch (IOException e) {
             System.err.println("Błąd połączenia: " + e.getMessage());
         } finally {
-            clients.removeIf(writer -> writer.checkError());
+            synchronized (clients) {
+                clients.removeIf(client -> {
+                    try {
+                        client.flush();
+                        return false;
+                    } catch (IOException e) {
+                        return true;
+                    }
+                });
+            }
+        }
+    }
+
+    private static byte[] serializeChanges(List<CanvasChange> changes) {
+        ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+        for (CanvasChange change : changes) {
+            byteStream.write(change.getX());
+            byteStream.write(change.getY());
+            byteStream.write(colorToByte(change.getColor()));
+            byteStream.write(change.getType().equals("DRAW") ? 0x01 : 0x00);
+        }
+        return byteStream.toByteArray();
+    }
+
+    private static CanvasChange deserializeChange(byte[] data) {
+        int x = data[0] & 0xFF;
+        int y = data[1] & 0xFF;
+        String color = byteToColor(data[2]);
+        String type = data[3] == 0x01 ? "DRAW" : "ERASE";
+        return new CanvasChange(type, x, y, color, 1);
+    }
+
+    private static byte colorToByte(String color) {
+        switch (color) {
+            case "#FF0000": return 0x01;
+            case "#0000FF": return 0x02;
+            case "#FFFF00": return 0x03;
+            case "#000000": return 0x04;
+            default: return 0x00;
+        }
+    }
+
+    private static String byteToColor(byte b) {
+        switch (b) {
+            case 0x01: return "#FF0000";
+            case 0x02: return "#0000FF";
+            case 0x03: return "#FFFF00";
+            case 0x04: return "#000000";
+            default: return "#FFFFFF";
         }
     }
 
     private static boolean isValidChange(CanvasChange change) {
         return change != null &&
                 change.getX() >= 0 && change.getX() < WIDTH &&
-                change.getY() >= 0 && change.getY() < HEIGHT &&
-                (change.getType().equals("DRAW") || change.getType().equals("ERASE"));
+                change.getY() >= 0 && change.getY() < HEIGHT;
     }
 
     private static void applyChangeToBoard(CanvasChange change) {
@@ -103,5 +145,4 @@ public class Server {
                 change.getType().equals("DRAW") ? change.getColor() : null
         );
     }
-
 }

@@ -8,32 +8,24 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public class ChangeBuffer {
     private final Queue<CanvasChange> changes = new ConcurrentLinkedQueue<>();
-    private final ReentrantLock lock = new ReentrantLock();
     private long lastFlushTime = System.currentTimeMillis();
 
     public void addChange(CanvasChange change) {
-        lock.lock();
-        try {
-            changes.add(change);
-        } finally {
-            lock.unlock();
-        }
+        changes.add(change); // ConcurrentLinkedQueue jest thread-safe
     }
 
     public List<CanvasChange> getChanges() {
-        lock.lock();
-        try {
-            List<CanvasChange> copy = new ArrayList<>(changes);
-            changes.clear();
-            lastFlushTime = System.currentTimeMillis();
-            return copy;
-        } finally {
-            lock.unlock();
+        List<CanvasChange> copy = new ArrayList<>();
+        CanvasChange change;
+        while ((change = changes.poll()) != null) {
+            copy.add(change);
         }
+        lastFlushTime = System.currentTimeMillis();
+        return copy;
     }
 
     public boolean shouldFlush() {
         return !changes.isEmpty() &&
-                (System.currentTimeMillis() - lastFlushTime > 200 || changes.size() > 100);
+                (System.currentTimeMillis() - lastFlushTime > 500 || changes.size() > 200);
     }
 }
