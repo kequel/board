@@ -81,7 +81,8 @@ public class Client {
                         out.println(gson.toJson(pending));
                     }
                 } catch (InterruptedException e) {
-                    e.printStackTrace();
+                    Thread.currentThread().interrupt();
+                    break;
                 }
             }
         }).start();

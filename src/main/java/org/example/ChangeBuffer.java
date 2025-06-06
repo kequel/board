@@ -2,10 +2,12 @@ package org.example;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.locks.ReentrantLock;
 
 public class ChangeBuffer {
-    private final List<CanvasChange> changes = new ArrayList<>();
+    private final Queue<CanvasChange> changes = new ConcurrentLinkedQueue<>();
     private final ReentrantLock lock = new ReentrantLock();
     private long lastFlushTime = System.currentTimeMillis();
 
@@ -32,7 +34,6 @@ public class ChangeBuffer {
 
     public boolean shouldFlush() {
         return !changes.isEmpty() &&
-//                (System.currentTimeMillis() - lastFlushTime > 100 || changes.size() > 50); //przyszlosciowo - gdy wieksza macierz
-                (System.currentTimeMillis() - lastFlushTime > 1);
+                (System.currentTimeMillis() - lastFlushTime > 200 || changes.size() > 100);
     }
 }

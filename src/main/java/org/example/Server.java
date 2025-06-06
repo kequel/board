@@ -67,9 +67,15 @@ public class Server {
             while ((line = in.readLine()) != null) {
                 try {
                     CanvasChange[] changes = gson.fromJson(line, CanvasChange[].class);
+                    //walidacja i dodanie do bufora
                     for (CanvasChange change : changes) {
                         if (isValidChange(change)) {
                             changeBuffer.addChange(change);
+                        }
+                    }
+                    //zastosowanie wszystkich zmian na raz
+                    synchronized (board) {
+                        for (CanvasChange change : changes) {
                             applyChangeToBoard(change);
                         }
                     }
@@ -93,10 +99,9 @@ public class Server {
 
     private static void applyChangeToBoard(CanvasChange change) {
         Point p = new Point(change.getX(), change.getY(), change.getColor());
-        if (change.getType().equals("DRAW")) {
-            board.put(p, change.getColor());
-        } else {
-            board.remove(p);
-        }
+        board.compute(p, (key, oldValue) ->
+                change.getType().equals("DRAW") ? change.getColor() : null
+        );
     }
+
 }
