@@ -1,19 +1,22 @@
 package org.example;
 
 import com.google.gson.Gson;
+import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
+import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.*;
-import java.util.*;
 import java.util.List;
+import java.util.Map;
 
 public class Client {
     static final int PORT = 5000;
-    static final int WIDTH = 50, HEIGHT = 50;
+    static final int WIDTH = 80, HEIGHT = 50;
     private static final Gson gson = new Gson();
     private static String currentColor = "#000000";
+    private static int currentSize = 1;
     private static final CanvasBuffer canvasBuffer = new CanvasBuffer();
 
     public static void main(String[] args) throws IOException {
@@ -41,6 +44,7 @@ public class Client {
 
         // Panel z przyciskami kolorów
         JPanel colorPanel = new JPanel();
+
         String[] colors = {"#000000", "#FF0000", "#0000FF", "#FFFF00", "#FFFFFF"};
         String[] colorNames = {"Czarny", "Czerwony", "Niebieski", "Żółty", "Gumka"};
 
@@ -50,6 +54,28 @@ public class Client {
             colorBtn.addActionListener(e -> currentColor = color);
             colorPanel.add(colorBtn);
         }
+
+        // Suwak do grubości
+        JSlider sizeSlider = new JSlider(1, 5, 1);
+        sizeSlider.setMajorTickSpacing(1);
+        sizeSlider.setPaintTicks(true);
+        sizeSlider.setPaintLabels(true);
+        sizeSlider.addChangeListener(e -> currentSize = sizeSlider.getValue());
+        colorPanel.add(new JLabel("Grubość:"));
+        colorPanel.add(sizeSlider);
+
+        // Przycisk do zapisu do JPG
+        JButton saveButton = new JButton("Zapisz do JPG");
+        saveButton.addActionListener(e -> {
+            try {
+                exportCanvasToImage("tablica.jpg");
+                JOptionPane.showMessageDialog(frame, "Zapisano jako tablica.jpg");
+            } catch (IOException ex) {
+                ex.printStackTrace();
+                JOptionPane.showMessageDialog(frame, "Błąd podczas zapisu", "Błąd", JOptionPane.ERROR_MESSAGE);
+            }
+        });
+        colorPanel.add(saveButton);
 
         panel.setPreferredSize(new Dimension(WIDTH * 10, HEIGHT * 10));
 
@@ -68,6 +94,11 @@ public class Client {
         frame.add(colorPanel, BorderLayout.NORTH);
         frame.add(panel, BorderLayout.CENTER);
         frame.pack();
+        frame.setSize(
+                Math.max(WIDTH * 10 + 16, colorPanel.getPreferredSize().width),
+                HEIGHT * 10 + colorPanel.getPreferredSize().height + 60
+        );
+
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         frame.setVisible(true);
 
@@ -104,10 +135,40 @@ public class Client {
     }
 
     private static void handleDrawing(MouseEvent e) {
-        int x = e.getX() / 10;
-        int y = e.getY() / 10;
+        int baseX = e.getX() / 10;
+        int baseY = e.getY() / 10;
         String type = currentColor.equals("#FFFFFF") ? "ERASE" : "DRAW";
-        CanvasChange change = new CanvasChange(type, x, y, currentColor, 1);
-        canvasBuffer.applyChange(change);
+        int half = currentSize / 2;
+
+        for (int dx = -half; dx <= half; dx++) {
+            for (int dy = -half; dy <= half; dy++) {
+                int x = baseX + dx;
+                int y = baseY + dy;
+                if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) {
+                    CanvasChange change = new CanvasChange(type, x, y, currentColor, currentSize);
+                    canvasBuffer.applyChange(change);
+                }
+            }
+        }
+
+        ((JComponent) e.getSource()).repaint();
+    }
+
+    public static void exportCanvasToImage(String filename) throws IOException {
+        int scale = 10;
+        BufferedImage image = new BufferedImage(WIDTH * scale, HEIGHT * scale, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g2d = image.createGraphics();
+
+        g2d.setColor(Color.WHITE);
+        g2d.fillRect(0, 0, image.getWidth(), image.getHeight());
+
+        for (Map.Entry<Point, String> entry : canvasBuffer.getCanvasState().entrySet()) {
+            Point p = entry.getKey();
+            g2d.setColor(Color.decode(entry.getValue()));
+            g2d.fillRect(p.x * scale, p.y * scale, scale, scale);
+        }
+
+        g2d.dispose();
+        ImageIO.write(image, "jpg", new File(filename));
     }
 }
