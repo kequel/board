@@ -1,6 +1,10 @@
 package org.example;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
@@ -8,8 +12,10 @@ import java.awt.event.*;
 import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.*;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Client {
     static final int PORT = 5000;
@@ -18,12 +24,25 @@ public class Client {
     private static String currentColor = "#000000";
     private static int currentSize = 1;
     private static final CanvasBuffer canvasBuffer = new CanvasBuffer();
+    private static String myId;
+    private static volatile CursorPosition myCursor = null;
+    private static final ConcurrentHashMap<String, CursorPosition> remoteCursors = new ConcurrentHashMap<>();
+    private static final int CELL_SIZE = 10;   // ↰ dodaj koło innych static-final
+
+
 
     public static void main(String[] args) throws IOException {
         String host = JOptionPane.showInputDialog("Adres serwera:");
         Socket socket = new Socket(host, PORT);
         PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
         BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+        // --- HANDSHAKE: odbierz swoje userId ---
+        String first = in.readLine();
+        JsonObject hello = JsonParser.parseString(first).getAsJsonObject();
+        if (hello.has("userId")) {
+            myId = hello.get("userId").getAsString();
+        }
+
 
         JFrame frame = new JFrame("Tablica");
         JPanel panel = new JPanel() {
@@ -39,6 +58,24 @@ public class Client {
                         g.fillRect(p.x * 10, p.y * 10, 10, 10);
                     }
                 }
+                // -------- mój kursor --------
+                if (myCursor != null) {
+                    int px = myCursor.x * CELL_SIZE;
+                    int py = myCursor.y * CELL_SIZE;
+                    g.setColor(Color.GREEN);          // odróżnij kolorem lub grubszą ramką
+                    g.drawOval(px, py, CELL_SIZE, CELL_SIZE);
+                    g.drawString("Ja", px + 2, py + 12);   // lub myId, jeśli wolisz
+                }
+                // -------- kursory innych użytkowników --------
+                for (CursorPosition cp : remoteCursors.values()) {          // ← fragment e
+                    int px = cp.x * CELL_SIZE;
+                    int py = cp.y * CELL_SIZE;
+                    g.setColor(Color.RED);           // możesz zmapować kolor na userId
+                    g.drawOval(px, py, CELL_SIZE, CELL_SIZE);
+                    g.drawString(cp.userId, px + 2, py + 12);
+                }
+
+
             }
         };
 
@@ -91,6 +128,16 @@ public class Client {
             }
         });
 
+        panel.addMouseMotionListener(new MouseMotionAdapter() {
+            public void mouseMoved(MouseEvent e) {
+                int gridX = e.getX() / CELL_SIZE;
+                int gridY = e.getY() / CELL_SIZE;
+                if (gridX >= 0 && gridX < WIDTH && gridY >= 0 && gridY < HEIGHT && myId != null) {
+                    myCursor = new CursorPosition(myId, gridX, gridY);   // ← fragment b
+                }
+            }
+        });
+
         frame.add(colorPanel, BorderLayout.NORTH);
         frame.add(panel, BorderLayout.CENTER);
         frame.pack();
@@ -107,6 +154,14 @@ public class Client {
             while (true) {
                 try {
                     Thread.sleep(50);
+
+                    // ------------- wysyłamy pozycję kursora -------------
+                    if (myCursor != null) {
+                        Map<String, Object> packet = new HashMap<>();
+                        packet.put("cursor", myCursor);
+                        out.println(gson.toJson(packet));          // ← fragment c
+                    }
+
                     List<CanvasChange> pending = canvasBuffer.getPendingChanges();
                     if (!pending.isEmpty()) {
                         out.println(gson.toJson(pending));
@@ -122,6 +177,20 @@ public class Client {
             try {
                 String line;
                 while ((line = in.readLine()) != null) {
+
+                    JsonElement elem = JsonParser.parseString(line);
+
+                    // ---------- pakiet kursora ----------
+                    if (elem.isJsonObject() && elem.getAsJsonObject().has("cursor")) {
+                        JsonObject obj = elem.getAsJsonObject();
+                        CursorPosition cp = gson.fromJson(obj.get("cursor"), CursorPosition.class);
+                        if (!cp.userId.equals(myId)) {                  // ← fragment d (warunek + mapa)
+                            remoteCursors.put(cp.userId, cp);
+                            panel.repaint();
+                        }
+                        continue;  // pomijamy dalszy kod
+                    }
+
                     CanvasChange[] changes = gson.fromJson(line, CanvasChange[].class);
                     for (CanvasChange change : changes) {
                         canvasBuffer.applyChange(change);
@@ -135,8 +204,10 @@ public class Client {
     }
 
     private static void handleDrawing(MouseEvent e) {
-        int baseX = e.getX() / 10;
-        int baseY = e.getY() / 10;
+        int baseX = e.getX() / CELL_SIZE;
+        int baseY = e.getY() / CELL_SIZE;
+        myCursor = new CursorPosition(myId, baseX, baseY);   // podbijamy pozycję także przy rysowaniu
+
         String type = currentColor.equals("#FFFFFF") ? "ERASE" : "DRAW";
         int half = currentSize / 2;
 

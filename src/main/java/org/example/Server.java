@@ -1,10 +1,15 @@
 package org.example;
 
 import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
 import java.io.*;
 import java.net.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class Server {
     static final int PORT = 5000;
@@ -13,6 +18,8 @@ public class Server {
     private static final List<PrintWriter> clients = new CopyOnWriteArrayList<>();
     private static final Gson gson = new Gson();
     private static final ChangeBuffer changeBuffer = new ChangeBuffer();
+    private static final ConcurrentHashMap<String, CursorPosition> cursors = new ConcurrentHashMap<>();
+    private static final AtomicInteger idSeq = new AtomicInteger(1);
 
     public static void main(String[] args) throws IOException {
         ServerSocket serverSocket = new ServerSocket(PORT);
@@ -51,6 +58,11 @@ public class Server {
         ) {
             clients.add(out);
 
+            // ----- HANDSHAKE -----
+            String myId = String.valueOf(idSeq.getAndIncrement());
+            out.println("{\"userId\":\"" + myId + "\"}");
+// ---------------------
+
             // Wysyłanie początkowego stanu tablicy
             synchronized (board) {
                 List<CanvasChange> initialChanges = new ArrayList<>();
@@ -66,6 +78,25 @@ public class Server {
             String line;
             while ((line = in.readLine()) != null) {
                 try {
+                    // Spróbuj zinterpretować pakiet jako obiekt JSON
+                    JsonElement elem = JsonParser.parseString(line);
+
+                    // 1) Pakiet kursora:  {"cursor":{...}}
+                    if (elem.isJsonObject() && elem.getAsJsonObject().has("cursor")) {
+                        JsonObject obj = elem.getAsJsonObject();
+                        CursorPosition cp = gson.fromJson(obj.get("cursor"), CursorPosition.class);
+
+                        // aktualizacja mapy i broadcast tylko tego jednego obiektu
+                        cursors.put(cp.userId, cp);
+                        String cursorJson = gson.toJson(Collections.singletonMap("cursor", cp));
+                        synchronized (clients) {
+                            for (PrintWriter client : clients) {
+                                client.println(cursorJson);
+                            }
+                        }
+                        continue;               // ⬅ pomijamy dalszą logikę CanvasChange
+                    }
+
                     CanvasChange[] changes = gson.fromJson(line, CanvasChange[].class);
                     for (CanvasChange change : changes) {
                         if (isValidChange(change)) {
