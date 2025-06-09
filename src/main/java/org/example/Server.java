@@ -7,7 +7,6 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/** Serwer z obsługą skompresowanych paczek zmian. */
 public class Server {
 
     static final int PORT = 5000;
@@ -25,7 +24,7 @@ public class Server {
         ServerSocket server = new ServerSocket(PORT);
         System.out.println("Serwer nasłuchuje na porcie " + PORT);
 
-        // Wątek rozsyłający co ≈20 ms zbuforowane paczki
+        // Wątek rozsyłający co okolo 20 ms zbuforowane paczki
         new Thread(() -> {
             while (true) {
                 try { Thread.sleep(20); }
@@ -50,16 +49,16 @@ public class Server {
 
             clients.add(out);
             String myId = String.valueOf(idSeq.getAndIncrement());
-            out.println("{\"userId\":\"" + myId + "\"}");           // handshake
+            out.println("{\"userId\":\"" + myId + "\"}"); // handshake
 
-            // pełny stan początkowy ⇒ już w formie skompresowanej
+            //pełny stan początkowy w formie skompresowanej
             out.println(gson.toJson(CanvasChangeCompressed.compress(fullBoardAsChanges())));
 
             String line;
             while ((line = in.readLine()) != null) try {
                 JsonElement elem = JsonParser.parseString(line);
 
-                /* -------- pakiety kursora -------- */
+                //pakiety kursora
                 if (elem.isJsonObject() && elem.getAsJsonObject().has("cursor")) {
                     CursorPosition cp = gson.fromJson(elem.getAsJsonObject().get("cursor"), CursorPosition.class);
                     cursors.put(cp.userId, cp);
@@ -67,12 +66,12 @@ public class Server {
                     continue;
                 }
 
-                /* -------- paczki zmian -------- */
+                //paczki zmian
                 if (!elem.isJsonArray()) continue;
                 JsonArray arr = elem.getAsJsonArray();
                 if (arr.size() == 0) continue;
 
-                // heurystyka: obecność pola „mask” ⇒ CanvasChangeCompressed
+                //obecność pola mask => CanvasChangeCompressed
                 if (arr.get(0).getAsJsonObject().has("mask")) {
                     CanvasChangeCompressed[] packets = gson.fromJson(line, CanvasChangeCompressed[].class);
                     for (CanvasChangeCompressed p : packets) apply(p.decompress());
@@ -87,8 +86,6 @@ public class Server {
             System.err.println("Błąd połączenia: " + e);
         }
     }
-
-    /* ---------------- pomocnicze ---------------- */
 
     private static void broadcast(String msg) {
         synchronized (clients) {
@@ -106,7 +103,7 @@ public class Server {
     private static void apply(Collection<CanvasChange> changes) {
         for (CanvasChange ch : changes) {
             if (!isValid(ch)) continue;
-            changeBuffer.addChange(ch);                       // dla broadcastu
+            changeBuffer.addChange(ch); // dla broadcastu
             Point p = new Point(ch.getX(), ch.getY(), ch.getColor());
             if ("DRAW".equals(ch.getType())) board.put(p, ch.getColor());
             else                              board.remove(p);

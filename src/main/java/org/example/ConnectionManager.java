@@ -15,59 +15,58 @@ public class ConnectionManager {
     private volatile PrintWriter out;
     private volatile BufferedReader in;
     private volatile boolean running = true;
-    private String userId;          // otrzymane przy 1. połączeniu
+    private String userId; // otrzymane przy 1. połączeniu
 
     public ConnectionManager(String host, int port) {
         this.host = host;
         this.port = port;
-        connectWithRetry();         // start od razu
+        connectWithRetry(); // start od razu
         startHeartbeatThread();
     }
 
-    /* -------------------------------- public API -------------------------------- */
+    //PUBLIC API
 
     public PrintWriter getWriter() { return out; }
     public BufferedReader getReader() { return in; }
     public String getUserId()        { return userId; }
 
-    /** Wywołaj, gdy pętla readera złapie IOException/EOF - spróbuje samo się odświeżyć. */
+    //gdy pętla readera złapie IOException/EOF - spróbuje samo się odświeżyć
     public void reconnectAsync() { new Thread(this::connectWithRetry).start(); }
 
-    /** Zatrzymaj całość (na wyjściu z aplikacji) */
+    //Zatrzymaj całość (wyjscie z aplikacji)
     public void shutdown() {
         running = false;
         closeSilently();
     }
 
-    /* ---------------------------------- internal -------------------------------- */
+    //INTERNAL
 
     private void connectWithRetry() {
         int attempt = 0;
         while (running) {
             try {
                 socket = new Socket(host, port);
-                out    = new PrintWriter(socket.getOutputStream(), true);
-                in     = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+                out = new PrintWriter(socket.getOutputStream(), true);
+                in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-                // ---- handshake ----
-                if (userId != null) {                       // reconnect
+                //handshake
+                if (userId != null) { // reconnect
                     out.println("{\"reconnect\":\"" + userId + "\"}");
                 }
                 else {
-                    out.println("{}");                      // ← DODANE: pusty JSON + \n
+                    out.println("{}");  //pusty JSON + \n
                 }
-                String hello = in.readLine();               // {"userId":"..."}
+                String hello = in.readLine(); // {"userId":"..."}
                 if (hello != null && hello.contains("userId")) {
                     userId = gson.fromJson(hello, Hello.class).userId;
                 }
 
-                System.out.println("✓ Połączono jako userId=" + userId);
-                return;                                     // sukces
+                System.out.println("Połączono jako userId=" + userId);
+                return; //sukces
             } catch (IOException e) {
                 attempt++;
-                int backoff = Math.min(30, 2 << attempt);   // exp back-off max 30 s
-                System.err.println("Nie mogę się połączyć – próba " + attempt +
-                        ". Następna za " + backoff + " s");
+                int backoff = Math.min(30, 2 << attempt); // exp back-off max 30 s
+                System.err.println("Nie mogę się połączyć – próba " + attempt + ". Następna za " + backoff + " s");
                 sleepSeconds(backoff);
             }
         }

@@ -12,7 +12,8 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
-/** Klient wysyła/odbiera skompresowane paczki CanvasChangeCompressed. */
+/** Klient : wysyła/odbiera skompresowane paczki CanvasChangeCompressed. */
+
 public class Client {
 
     static final int PORT = 5000, WIDTH = 80, HEIGHT = 50, CELL = 10;
@@ -35,11 +36,11 @@ public class Client {
         PrintWriter out = new PrintWriter(s.getOutputStream(), true);
         BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()));
 
-        /* ---------- handshake ---------- */
+        //handshake
         JsonObject hello = JsonParser.parseString(in.readLine()).getAsJsonObject();
         myId = hello.get("userId").getAsString();
 
-        /* ---------- UI ---------- */
+        //UI
         JFrame f = new JFrame("Tablica");
         JPanel board = new JPanel() {
             protected void paintComponent(Graphics g) {
@@ -63,14 +64,14 @@ public class Client {
         };
         board.setPreferredSize(new Dimension(WIDTH * CELL, HEIGHT * CELL));
 
-        /* mouse */
+        //myszka
         board.addMouseMotionListener(new MouseMotionAdapter() {
             public void mouseDragged(MouseEvent e) { draw(e); }
             public void mouseMoved  (MouseEvent e) { updateCursor(e); }
         });
         board.addMouseListener(new MouseAdapter() { public void mousePressed(MouseEvent e) { draw(e); } });
 
-        /* toolbar */
+        //toolbar
         JPanel tools = new JPanel();
         String[] colors = {"#000000","#FF0000","#0000FF","#FFFF00","#FFFFFF"};
         String[] names  = {"Czarny","Czerwony","Niebieski","Żółty","Gumka"};
@@ -91,7 +92,7 @@ public class Client {
         f.add(board, BorderLayout.CENTER);
         f.pack(); f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE); f.setVisible(true);
 
-        /* ---------- sender ---------- */
+        //sender
         new Thread(() -> {
             try {
                 while (true) {
@@ -109,14 +110,14 @@ public class Client {
             } catch (InterruptedException ignored) {}
         }, "sender").start();
 
-        /* ---------- receiver ---------- */
+        //receiver
         new Thread(() -> {
             try {
                 String line;
                 while ((line = in.readLine()) != null) {
                     JsonElement el = JsonParser.parseString(line);
 
-                    /* cursor? */
+                    //cursor
                     if (el.isJsonObject() && el.getAsJsonObject().has("cursor")) {
                         CursorPosition cp = gson.fromJson(el.getAsJsonObject().get("cursor"), CursorPosition.class);
                         if (!cp.userId.equals(myId)) remote.put(cp.userId, cp);
@@ -128,12 +129,12 @@ public class Client {
                     if (arr.size()==0) continue;
 
                     if (arr.get(0).getAsJsonObject().has("mask")) {
-                        // CanvasChangeCompressed[]
+                        //CanvasChangeCompressed[]
                         for (CanvasChangeCompressed p :
                                 gson.fromJson(line, CanvasChangeCompressed[].class))
                             p.decompress().forEach(canvas::applyChange);
                     } else {
-                        // CanvasChange[]
+                        //CanvasChange[]
                         for (CanvasChange ch : gson.fromJson(line, CanvasChange[].class))
                             canvas.applyChange(ch);
                     }
@@ -142,8 +143,6 @@ public class Client {
             } catch (IOException ex) { ex.printStackTrace(); }
         }, "receiver").start();
     }
-
-    /* ---------------- helpers ---------------- */
 
     private static void draw(MouseEvent e) {
         int cx = e.getX() / CELL, cy = e.getY() / CELL;

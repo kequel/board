@@ -5,13 +5,12 @@ import java.util.List;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Bufor po stronie serwera – gromadzi pojedyncze CanvasChange,
- * a na żądanie zwraca paczki CanvasChangeCompressed.
- */
+ Bufor po stronie serwera – gromadzi pojedyncze CanvasChange, a na żądanie zwraca paczki CanvasChangeCompressed.
+ **/
 public class ChangeBuffer {
 
-    private static final int  MAX_BATCH_SIZE   = 200;   // ile pikseli maks. w paczu
-    private static final long MAX_BATCH_AGE_MS = 50;    // lub co najwyżej co 50 ms
+    private static final int  MAX_BATCH_SIZE   = 200; // ile pikseli maks. w paczu
+    private static final long MAX_BATCH_AGE_MS = 50; // lub co najwyżej co 50 ms
 
     private final List<CanvasChange> changes = new ArrayList<>();
     private final ReentrantLock      lock    = new ReentrantLock();
@@ -23,7 +22,7 @@ public class ChangeBuffer {
         finally { lock.unlock(); }
     }
 
-    /** Zwraca (i czyści) spakowane zmiany. */
+    //Zwraca (i czyści) spakowane zmiany
     public List<CanvasChangeCompressed> getCompressedChanges() {
         lock.lock();
         try {
@@ -36,7 +35,7 @@ public class ChangeBuffer {
         }
     }
 
-    /** Czy już czas wysłać kolejną paczkę? */
+    //Czy czas wysłać kolejną paczkę?
     public boolean shouldFlush() {
         lock.lock();
         try {
