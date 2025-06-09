@@ -12,13 +12,13 @@ public class Server {
     static final int PORT = 5000;
     static final int WIDTH = 80, HEIGHT = 50;
 
-    private static final ConcurrentHashMap<Point, String> board   = new ConcurrentHashMap<>();
-    private static final List<PrintWriter>                 clients = new CopyOnWriteArrayList<>();
+    private static final ConcurrentHashMap<Point, String> board = new ConcurrentHashMap<>();
+    private static final List<PrintWriter> clients = new CopyOnWriteArrayList<>();
     private static final ConcurrentHashMap<String, CursorPosition> cursors = new ConcurrentHashMap<>();
 
-    private static final Gson          gson         = new Gson();
-    private static final ChangeBuffer  changeBuffer = new ChangeBuffer();
-    private static final AtomicInteger idSeq        = new AtomicInteger(1);
+    private static final Gson gson = new Gson();
+    private static final ChangeBuffer changeBuffer = new ChangeBuffer();
+    private static final AtomicInteger idSeq  = new AtomicInteger(1);
 
     public static void main(String[] args) throws IOException {
         ServerSocket server = new ServerSocket(PORT);
@@ -40,8 +40,7 @@ public class Server {
         while (true) new Thread(() -> handleClient(server)).start();
     }
 
-    /* ---------------- obsługa jednego klienta ---------------- */
-
+    //Obsluga jednego klienta
     private static void handleClient(ServerSocket server) {
         try (Socket sock = server.accept();
              BufferedReader in  = new BufferedReader(new InputStreamReader(sock.getInputStream()));
